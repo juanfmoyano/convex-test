@@ -42,17 +42,6 @@ export const createTransaction = internalMutationWithZod({
     const doc = await ctx.db.get(id);
     await incomingAggregate.insert(ctx, doc!);
     await outgoingAggregate.insert(ctx, doc!);
-
-
-    const id2 = await ctx.db.insert("transactions", {
-      source_user_id: args.targetUserId,
-      target_user_id: args.sourceUsersId,
-      amount: args.amount * 1.5,
-      description: 'Test',
-    });
-    const doc2 = await ctx.db.get(id2);
-    await incomingAggregate.insert(ctx, doc2!);
-    await outgoingAggregate.insert(ctx, doc2!);
   },
 });
 
