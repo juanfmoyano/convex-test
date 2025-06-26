@@ -6,7 +6,7 @@ export function SignOutButton() {
   const { signOut } = useAuthActions();
   const onSignOut = () => {
     void signOut();
-    redirect("/home"); // Redirect to home page after sign out
+    redirect("/home");
   }
   return <Button onClick={onSignOut}>Sign out</Button>;
 }

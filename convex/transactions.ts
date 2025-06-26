@@ -4,10 +4,10 @@ import { query } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { DataModel, Doc, Id } from "./_generated/dataModel";
 import { internalMutationWithZod, zId } from "./utils";
+import { outgoingBetsAggregate } from "./schema/battlesBets";
 
-// Aggregate for incoming transactions (grouped by target_user_id)
 const incomingAggregate = new TableAggregate<{
-  Key: string; // user id as string
+  Key: string;
   DataModel: DataModel;
   TableName: "transactions";
 }>(components.incomingAggregate, {
@@ -15,9 +15,8 @@ const incomingAggregate = new TableAggregate<{
   sumValue: (doc) => doc.amount,
 });
 
-// Aggregate for outgoing transactions (grouped by source_user_id)
 const outgoingAggregate = new TableAggregate<{
-  Key: string; // user id as string
+  Key: string;
   DataModel: DataModel;
   TableName: "transactions";
 }>(components.outgoingAggregate, {
@@ -27,14 +26,14 @@ const outgoingAggregate = new TableAggregate<{
 
 export const createTransaction = internalMutationWithZod({
   args: {
-    sourceUsersId: zId("users"),
+    sourceUserId: zId("users"),
     targetUserId: zId("users"),
     amount: z.number().min(1, "Transaction amount must be greater than 0"),
     description: z.string().optional(),
   },
   handler: async (ctx, args) => {
     const id = await ctx.db.insert("transactions", {
-      source_user_id: args.sourceUsersId,
+      source_user_id: args.sourceUserId,
       target_user_id: args.targetUserId,
       amount: args.amount,
       description: args.description,
@@ -47,7 +46,10 @@ export const createTransaction = internalMutationWithZod({
 
 export const getAllTransactions = query({
   handler: async (ctx) => {
-    const transactions = await ctx.db.query("transactions").collect();
+    const transactions = await ctx.db
+      .query("transactions")
+      .order("desc")
+      .collect();
 
     const userIdsSet = new Set<Id<"users">>();
     for (const tx of transactions) {
@@ -68,11 +70,25 @@ export const getAllTransactions = query({
       }
     }
 
-    const populatedTransactions = transactions.map((tx) => ({
-      ...tx,
-      sourceUser: userMap.get(tx.source_user_id) ?? null,
-      targetUser: userMap.get(tx.target_user_id) ?? null,
-    }));
+    const populatedTransactions = transactions.map((tx) => {
+      const sourceUser = userMap.get(tx.source_user_id);
+      const targetUser = userMap.get(tx.target_user_id);
+      if (!sourceUser) {
+        throw new Error(
+          `Source user not found for transaction ${tx._id} -> ${tx.source_user_id}`
+        );
+      }
+      if (!targetUser) {
+        throw new Error(
+          `Target user not found for transaction ${tx._id} -> ${tx.target_user_id}`
+        );
+      }
+      return {
+        ...tx,
+        sourceUser: sourceUser,
+        targetUser: targetUser,
+      };
+    });
 
     return populatedTransactions;
   },
@@ -81,18 +97,13 @@ export const getAllTransactions = query({
 export const getUserBalance = query({
   handler: async (ctx) => {
     const currentUser = await ctx.runQuery(internal.users.getCurrentUser, {});
-    const incoming = await incomingAggregate.sum(ctx, {
-      bounds: {
-        lower: { key: currentUser._id, inclusive: true },
-        upper: { key: currentUser._id, inclusive: true },
-      },
-    });
-    const outgoing = await outgoingAggregate.sum(ctx, {
-      bounds: {
-        lower: { key: currentUser._id, inclusive: true },
-        upper: { key: currentUser._id, inclusive: true },
-      },
-    });
-    return (incoming ?? 0) - (outgoing ?? 0);
+    const bounds = {
+      lower: { key: currentUser._id, inclusive: true },
+      upper: { key: currentUser._id, inclusive: true },
+    };
+    const incoming = await incomingAggregate.sum(ctx, { bounds });
+    const outgoing = await outgoingAggregate.sum(ctx, { bounds });
+    const outgoingBets = await outgoingBetsAggregate.sum(ctx, { bounds });
+    return (incoming ?? 0) - (outgoing ?? 0) - (outgoingBets ?? 0);
   },
 });

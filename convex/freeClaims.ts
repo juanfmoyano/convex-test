@@ -1,5 +1,5 @@
 import { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+import { mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 const HOME_USER_ID: Id<"users"> =
@@ -14,16 +14,10 @@ export const claimDailyTokens = mutation({
       amount: DAILY_TOKEN_AMOUNT,
     });
     await ctx.runMutation(internal.transactions.createTransaction, {
-			sourceUsersId: HOME_USER_ID,
+			sourceUserId: HOME_USER_ID,
       targetUserId: user._id,
       amount: DAILY_TOKEN_AMOUNT,
-      description: `${new Date().toISOString()} - ${DAILY_TOKEN_AMOUNT} - Daily Claim`,
+      description: `Daily Claim`,
     });
-  },
-});
-
-export const getAllClaims = query({
-  handler: async (ctx) => {
-    return await ctx.db.query("freeClaims").collect();
   },
 });
